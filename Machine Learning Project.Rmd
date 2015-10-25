@@ -1,0 +1,168 @@
+---
+title: "Practical Machine Learning Course Project"
+author: "Ignacio Reboredo"
+output: html_document
+---
+## Overview
+
+This project aims to conduct an analysis over data from accelerometers on the belt, forearm, arm and dumbell of 6 participants while performing barbell lifts, and predict when they performed the exercise correctly and incorrectly in 5 different ways.
+
+Dataset: the data comprises 6 activity clasifications, gathered from 6 subjects wearing accelerometers. Each sample corresponds to the meassurements (160 attributes) derived from a time window. Training set corresponds to 19622 samples with their corresponding outcome (classe) that corresponds with one of the 6 ways to perform the exercise (A to E). Test set corresponds to 20 samples with the same attributes (excep the outcome)
+
+## Exploratory Data Analysis
+
+### Data Procesing
+
+```{r installing_packages, echo=FALSE, warning=FALSE, message=FALSE}
+
+## Installing libraries
+
+library(caret)
+library(randomForest)
+
+```
+
+```{r data_reading, echo=TRUE}
+
+## Reading data
+test<-read.csv("pml-testing.csv",stringsAsFactors=TRUE)
+train<-read.csv("pml-training.csv",stringsAsFactors=TRUE)
+str(train[1:36])
+
+```
+
+A first exploratory analysis allows to identify many variables where most of the values are NAs. That the variables correspond to summaries by time window as they occur only when the window change 
+
+The first thougth was try to use only summary variables to build the model, but some of them seem to have been swapped so due to these discrepancies I dicided not to use this variables as predictors
+
+In addition, variables with zero or near zero variance were removed as well as the first columns that didn't provide relevant information as predictors and could introduce overfitting in training
+
+
+```{r data_claening, echo=TRUE}
+
+## creationg training and testing sets
+
+inTrain<-createDataPartition(y=train$classe,p=0.7,list=FALSE)
+Training0<-train
+Training<-train[inTrain,]
+Testing<-train[-inTrain,]
+
+## removing predictors with NAs in test and training sets
+
+Training<-Training[,colSums(is.na(test))==0]
+
+## removing predictors with zero or near zero variance 
+
+ZeroVar<-nearZeroVar(Training,saveMetrics=TRUE)
+Training<-Training[,(ZeroVar$nzv==FALSE)&(ZeroVar$nzv==FALSE)]
+
+## removing the first columns corresponding with variables that don't work as predictors and can induce overfitting X (numer of sample), time stamp vars and num window
+
+Training<-Training[,7:dim(Training)[2]]
+
+```
+
+As result of the the exploratory data analysis, predictors were reduced from 160 to 53
+
+## Machine Learning Algorithm
+
+Due to the key objective is to obtain a good predictor and not interpret the results, I decided to use Random Forest algorithm that allows to reach high accuracy and don't require data standardization like in regresion models
+
+### Random Forest with 53 predictors
+
+```{r random_forest, echo=TRUE, results='hide'}
+
+### Random Forest model with 53 predictors
+
+set.seed(4321)
+train_rf<-randomForest(classe~.,data = Training,importance=TRUE)
+
+pred<-predict(train_rf,Testing)
+cm<-confusionMatrix(pred,Testing$classe)
+cm
+
+```
+
+The Random Forest algorithm over the 53 predictors provides a high accuracy as shown bellow:
+
+```{r random_forest, echo=FALSE}
+```
+
+## Cross Validations and Out of Sample Error
+
+But high accuracy, mainly when many predictors are used building the learning algorith, can be synonym of overfitting. For this reason, we will tray to reduce the number of preditors while minimizing the impact in accuracy
+
+The first step is identify those variables that better performe as predictors
+
+
+```{r cross_validation, echo=FALSE, results='hide', fig.width=10, fig.height=7}
+
+### Identification of better predictors
+
+importance_pred<-importance(train_rf,type=1)
+varImpPlot(train_rf)
+
+```
+
+Where most accurate predictors are yaw_belt, roll_belt, pitch_belt, magnet_dumbbell_z, magnet_dumbbell_y and pitch_forearm 
+
+### Random Forest with 2 predictors
+
+Building the model for the two most accurate predictors "yaw_belt" and "roll_belt":
+
+```{r random_forest_2, echo=TRUE, results='hide'}
+
+## Random Forest with two main predictors
+
+Training_2<-subset(Training,select=c("yaw_belt","roll_belt","classe"))
+set.seed(1234)
+
+train_rf_2<-randomForest(classe~.,data = Training_2,importance=TRUE)
+pred_2<-predict(train_rf_2,Testing)
+cm_2<-confusionMatrix(pred_2,Testing$classe)
+cm_2
+
+```
+
+The Random Forest algorithm over these two predictors provides the following results:
+
+```{r random_forest_2, echo=FALSE}
+```
+
+As can be show, this model has a low accuracy, which leads him to commit many misclassification. As conclusion, the two main predictors are not enought to build a good predictor model, so we need to add aditional predictors to our model
+
+### Random Forest with 6 predictors
+
+Building the prediction model with the six most accurate predictors "yaw_belt", "roll_belt", "pitch_belt", "magnet_dumbbell_z", "magnet_dumbbell_y" and "pitch_forearm":
+
+```{r random_forest_6, echo=TRUE, results='hide'}
+
+## Random Forest with six main predictors
+
+Training_6<-subset(Training,select=c("yaw_belt","roll_belt","pitch_belt","magnet_dumbbell_z","magnet_dumbbell_y","pitch_forearm","classe"))
+set.seed(1234)
+
+train_rf_6<-randomForest(classe~.,data = Training_6,importance=TRUE)
+pred_6<-predict(train_rf_6,Testing)
+cm_6<-confusionMatrix(pred_6,Testing$classe)
+cm_6
+
+```
+
+The Random Forest algorithm over these six predictors provides the following results:
+
+```{r random_forest_6, echo=FALSE}
+```
+
+We can see how the new model provide us a high accuracy (98,33%, not far from the 99,46% reached with 53 predictors) with only 6 predictors, so I will finally use this model to make the test predictions
+
+### Test prediction
+
+```{r random_forest_prediction, echo=TRUE, results='hide'}
+
+## Prediction over test set
+
+pred_test<-predict(train_rf_6,test)
+
+
+```
